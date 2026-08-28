@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chamakte Akshar — Particle Text</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0e0e18;
+    --ink2:#151524;
+    --ember:#e8b85c;
+    --violet:#9b8cf2;
+    --mist:#c9c6d8;
+    --paper:#f4f1ea;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{
+    height:100%;
+    background: radial-gradient(ellipse at 50% -10%, #1c1c30 0%, var(--ink) 55%);
+    overflow:hidden;
+    font-family:'Space Mono', monospace;
+    color:var(--mist);
+  }
+  #stage{
+    position:fixed; inset:0;
+    display:block;
+    cursor: crosshair;
+  }
+  .ui{
+    position:fixed;
+    left:0; right:0;
+    z-index:5;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:10px;
+    pointer-events:none;
+  }
+  .top{ top:0; padding-top:22px; }
+  .bottom{ bottom:0; padding-bottom:20px; }
+  .eyebrow{
+    font-size:11px;
+    letter-spacing:0.35em;
+    text-transform:uppercase;
+    color: var(--ember);
+    opacity:0.85;
+  }
+  .panel{
+    pointer-events:auto;
+    display:flex;
+    gap:8px;
+    align-items:center;
+    background: rgba(20,20,34,0.55);
+    border:1px solid rgba(201,198,216,0.15);
+    backdrop-filter: blur(10px);
+    padding:10px 12px;
+    border-radius:14px;
+  }
+  input#txt{
+    font-family:'Fraunces', serif;
+    font-size:16px;
+    font-weight:600;
+    background:transparent;
+    border:none;
+    outline:none;
+    color:var(--paper);
+    width:min(46vw,320px);
+    padding:6px 4px;
+  }
+  input#txt::placeholder{ color: rgba(201,198,216,0.4); font-weight:300;}
+  button{
+    font-family:'Space Mono', monospace;
+    font-size:11px;
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    background: transparent;
+    border:1px solid rgba(232,184,92,0.5);
+    color: var(--ember);
+    padding:9px 14px;
+    border-radius:10px;
+    cursor:pointer;
+    transition: all .2s ease;
+    white-space:nowrap;
+  }
+  button:hover{ background: rgba(232,184,92,0.12); }
+  button:active{ transform: scale(0.96); }
+  .swatches{ display:flex; gap:6px; pointer-events:auto; }
+  .sw{
+    width:22px; height:22px; border-radius:50%;
+    border:2px solid rgba(255,255,255,0.15);
+    cursor:pointer;
+  }
+  .sw.active{ border-color: var(--paper); }
+  .hint{
+    font-size:11px;
+    color: rgba(201,198,216,0.45);
+    letter-spacing:0.03em;
+    text-align:center;
+    max-width:280px;
+  }
+  @media (prefers-reduced-motion: reduce){
+    #stage{ cursor:default; }
+  }
+</style>
+</head>
+<body>
+
+<canvas id="stage"></canvas>
+
+<div class="ui top">
+  <div class="eyebrow">Chamakte Akshar</div>
+  <div class="panel">
+    <input id="txt" type="text" maxlength="18" placeholder="apna text likho...">
+    <button id="go">Banao</button>
+  </div>
+</div>
+
+<div class="ui bottom">
+  <div class="swatches">
+    <div class="sw active" data-c="232,184,92" style="background:#e8b85c"></div>
+    <div class="sw" data-c="155,140,242" style="background:#9b8cf2"></div>
+    <div class="sw" data-c="244,241,234" style="background:#f4f1ea"></div>
+    <div class="sw" data-c="230,120,110" style="background:#e6786e"></div>
+    <div class="sw" data-c="120,200,180" style="background:#78c8b4"></div>
+  </div>
+  <div class="hint">Mouse ya finger se hilao — particles bikhar jaayenge, phir khud wapas aa jaayenge</div>
+</div>
+
+<script>
+const canvas = document.getElementById('stage');
+const ctx = canvas.getContext('2d');
+let W, H, DPR;
+
+function resize(){
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * DPR;
+  canvas.height = H * DPR;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize', ()=>{ resize(); buildFromText(currentText); });
+resize();
+
+let color = [232,184,92];
+document.querySelectorAll('.sw').forEach(sw=>{
+  sw.addEventListener('click', ()=>{
+    document.querySelectorAll('.sw').forEach(s=>s.classList.remove('active'));
+    sw.classList.add('active');
+    color = sw.dataset.c.split(',').map(Number);
+    particles.forEach(p=>{ p.baseColor = color; });
+  });
+});
+
+class Particle{
+  constructor(x,y){
+    this.tx = x; this.ty = y;      // target (home) position
+    this.x = Math.random()*W;      // start scattered from random spot (entrance anim)
+    this.y = Math.random()*H;
+    this.vx = 0; this.vy = 0;
+    this.size = Math.random()*1.6 + 1.0;
+    this.baseColor = color;
+    this.flicker = Math.random()*Math.PI*2;
+  }
+  update(mouse){
+    // repulsion from cursor
+    const dx = this.x - mouse.x;
+    const dy = this.y - mouse.y;
+    const dist = Math.sqrt(dx*dx + dy*dy) || 0.001;
+    const radius = 90;
+    if(dist < radius && mouse.active){
+      const force = (radius - dist) / radius;
+      this.vx += (dx/dist) * force * 6;
+      this.vy += (dy/dist) * force * 6;
+    }
+    // spring back to home
+    const homeDx = this.tx - this.x;
+    const homeDy = this.ty - this.y;
+    this.vx += homeDx * 0.02;
+    this.vy += homeDy * 0.02;
+    // damping
+    this.vx *= 0.86;
+    this.vy *= 0.86;
+    this.x += this.vx;
+    this.y += this.vy;
+    this.flicker += 0.06;
+  }
+  draw(){
+    const alpha = 0.55 + Math.sin(this.flicker)*0.35;
+    ctx.beginPath();
+    ctx.fillStyle = `rgba(${this.baseColor[0]},${this.baseColor[1]},${this.baseColor[2]},${Math.max(alpha,0.15)})`;
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI*2);
+    ctx.fill();
+  }
+}
+
+let particles = [];
+let currentText = 'NAMASTE';
+
+function sampleTextPoints(text){
+  const off = document.createElement('canvas');
+  off.width = W; off.height = H;
+  const octx = off.getContext('2d');
+  const fontSize = Math.min(W / (text.length*0.62), H*0.42);
+  octx.fillStyle = '#fff';
+  octx.font = `600 ${fontSize}px Fraunces, serif`;
+  octx.textAlign = 'center';
+  octx.textBaseline = 'middle';
+  octx.fillText(text, W/2, H/2);
+  const data = octx.getImageData(0,0,W,H).data;
+  const points = [];
+  const gap = Math.max(2, Math.floor(fontSize/38));
+  for(let y=0; y<H; y+=gap){
+    for(let x=0; x<W; x+=gap){
+      const idx = (y*W + x)*4 + 3;
+      if(data[idx] > 128){
+        points.push({x, y});
+      }
+    }
+  }
+  return points;
+}
+
+function buildFromText(text){
+  currentText = text || 'NAMASTE';
+  const pts = sampleTextPoints(currentText.toUpperCase());
+  // cap particle count for perf
+  const maxP = 3200;
+  const step = Math.max(1, Math.floor(pts.length / maxP));
+  const chosen = pts.filter((_,i)=> i % step === 0);
+  particles = chosen.map(p => new Particle(p.x, p.y));
+}
+
+buildFromText(currentText);
+
+const mouse = { x:-9999, y:-9999, active:false };
+function setPointer(x,y){ mouse.x = x; mouse.y = y; mouse.active = true; }
+canvas.addEventListener('mousemove', e=> setPointer(e.clientX, e.clientY));
+canvas.addEventListener('mouseleave', ()=> mouse.active=false);
+canvas.addEventListener('touchmove', e=>{
+  if(e.touches[0]) setPointer(e.touches[0].clientX, e.touches[0].clientY);
+}, {passive:true});
+canvas.addEventListener('touchend', ()=> mouse.active=false);
+
+document.getElementById('go').addEventListener('click', ()=>{
+  const val = document.getElementById('txt').value.trim();
+  if(val) buildFromText(val);
+});
+document.getElementById('txt').addEventListener('keydown', e=>{
+  if(e.key === 'Enter'){
+    const val = e.target.value.trim();
+    if(val) buildFromText(val);
+  }
+});
+
+function loop(){
+  ctx.fillStyle = 'rgba(14,14,24,0.28)';
+  ctx.fillRect(0,0,W,H);
+  particles.forEach(p=>{ p.update(mouse); p.draw(); });
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+
+</body>
+</html>
